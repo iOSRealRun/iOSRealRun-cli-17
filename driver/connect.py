@@ -37,8 +37,7 @@ def get_developer_mode_status(lockdown: LockdownClient):
     return lockdown.developer_mode_status
 
 def reveal_developer_mode(lockdown: LockdownClient):
-    service = lockdown.start_lockdown_service(AmfiService.SERVICE_NAME)
-    return service.send_recv_plist({'action': 0})
+    AmfiService(lockdown).create_amfi_show_override_path_file()
 
 def enable_developer_mode(lockdown: LockdownClient):
     AmfiService(lockdown).enable_developer_mode()
