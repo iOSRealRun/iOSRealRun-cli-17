@@ -1,8 +1,23 @@
 import sys
+import ctypes
+import os
 
 from driver import connect
 
 def init():
+    # check if root on mac or Administrator on windows
+    if sys.platform == "win32":
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            print("请以管理员权限运行")
+            sys.exit(1)
+    elif sys.platform == "darwin":
+        if os.geteuid() != 0:
+            print("请以root权限运行")
+            sys.exit(1)
+    else:
+        print("仅支持macOS和Windows")
+        sys.exit(1)
+
     # get lockdown client
     lockdown = connect.get_usbmux_lockdownclient()
 

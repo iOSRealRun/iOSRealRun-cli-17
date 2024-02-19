@@ -8,8 +8,6 @@ from driver import location
 from pymobiledevice3.cli.remote import RemoteServiceDiscoveryService
 from pymobiledevice3.cli.developer import DvtSecureSocketProxyService
 
-from pymobiledevice3.exceptions import PasswordRequiredError
-
 from init import init
 from init import tunnel
 from init import route
