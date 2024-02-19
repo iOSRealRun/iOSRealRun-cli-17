@@ -10,7 +10,17 @@ from pymobiledevice3.cli.remote import verify_tunnel_imports
 
 from pymobiledevice3.services.amfi import AmfiService
 
+from pymobiledevice3.exceptions import NoDeviceConnectedError
+
 def get_usbmux_lockdownclient():
+    while True:
+        try:
+            lockdown = create_using_usbmux()
+        except NoDeviceConnectedError:
+            print("请连接设备后按回车...")
+            input()
+        else:
+            break
     while True:
         lockdown = create_using_usbmux()
         if lockdown.all_values.get("PasswordProtected"):
