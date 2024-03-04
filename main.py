@@ -17,25 +17,25 @@ import run
 import config
 
 
+debug = os.environ.get("DEBUG", False)
 
 # set logging level
 coloredlogs.install(level=logging.INFO)
-logging.getLogger('wintun').setLevel(logging.WARNING)
-logging.getLogger('quic').disabled = True
-logging.getLogger('asyncio').disabled = True
-logging.getLogger('zeroconf').disabled = True
-logging.getLogger('parso.cache').disabled = True
-logging.getLogger('parso.cache.pickle').disabled = True
-logging.getLogger('parso.python.diff').disabled = True
-logging.getLogger('humanfriendly.prompts').disabled = True
-logging.getLogger('blib2to3.pgen2.driver').disabled = True
-logging.getLogger('urllib3.connectionpool').disabled = True
+logging.getLogger('wintun').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('quic').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('zeroconf').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('parso.cache').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('parso.cache.pickle').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('parso.python.diff').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('humanfriendly.prompts').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('blib2to3.pgen2.driver').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG if debug else logging.WARNING)
 
 
 
 def main():
     # set level
-    debug = os.environ.get("DEBUG", False)
     logger = logging.getLogger(__name__)
     coloredlogs.install(level=logging.INFO)
     logger.setLevel(logging.INFO)
