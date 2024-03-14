@@ -43,7 +43,7 @@ def main():
         logger.setLevel(logging.DEBUG)
         coloredlogs.install(level=logging.DEBUG)
 
-    init.init()
+    # init.init()
     logger.info("init done")
 
     # start the tunnel in another process
@@ -59,8 +59,9 @@ def main():
         loc = route.get_route()
         logger.info(f"got route from {config.config.routeConfig}")
 
-
+        
         with RemoteServiceDiscoveryService((address, port)) as rsd:
+            init.init(rsd.lockdown)
             with DvtSecureSocketProxyService(rsd) as dvt:
                 try:
                     print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
