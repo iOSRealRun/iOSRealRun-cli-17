@@ -3,10 +3,15 @@ import multiprocessing
 
 from pymobiledevice3.lockdown import create_using_usbmux, LockdownClient
 
-from pymobiledevice3.cli.remote import install_driver_if_required
-from pymobiledevice3.cli.remote import select_device, RemoteServiceDiscoveryService
-from pymobiledevice3.cli.remote import start_tunnel
-from pymobiledevice3.cli.remote import verify_tunnel_imports
+# select_device and install_driver_if_required were
+# already deprecated in pymobiledevice3 v4.14.11
+from pymobiledevice3.remote.utils import get_rsds
+from pymobiledevice3.cli.remote import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.tunnel_service import (
+    start_tunnel,
+    create_core_device_tunnel_service_using_rsd,
+    TunnelProtocol
+)
 
 from pymobiledevice3.services.amfi import AmfiService
 
@@ -42,14 +47,20 @@ def reveal_developer_mode(lockdown: LockdownClient):
 def enable_developer_mode(lockdown: LockdownClient):
     AmfiService(lockdown).enable_developer_mode()
 
-def get_serverrsd():
-    install_driver_if_required()
-    if not verify_tunnel_imports():
-        exit(1)
-    return select_device(None)
+
+async def get_serverrsd():
+    # install_driver_if_required() not required in MacOS
+    rsds = await get_rsds()
+    if not rsds:
+        raise NoDeviceConnectedError("未发现可用设备或 RSD 服务")
+    rsd = rsds[0]
+    return rsd
 
 
 async def tunnel(rsd: RemoteServiceDiscoveryService, queue: multiprocessing.Queue):
-    async with start_tunnel(rsd, None) as tunnel_result:
+    # 先构造协议处理器（CoreDeviceTunnelService）
+    service = await create_core_device_tunnel_service_using_rsd(rsd)
+    # ios18.7 测试，改用 TCP 协议才能成功
+    async with start_tunnel(service, protocol=TunnelProtocol.TCP) as tunnel_result:
         queue.put((tunnel_result.address, tunnel_result.port))
         await tunnel_result.client.wait_closed()
