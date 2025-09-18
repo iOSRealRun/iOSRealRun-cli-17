@@ -2,6 +2,7 @@ import signal
 import logging
 import coloredlogs
 import os
+import asyncio
 
 from driver import location
 
@@ -21,17 +22,25 @@ debug = os.environ.get("DEBUG", False)
 
 # set logging level
 coloredlogs.install(level=logging.INFO)
-logging.getLogger('wintun').setLevel(logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('wintun').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
 logging.getLogger('quic').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('asyncio').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('zeroconf').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.cache').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.cache.pickle').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.python.diff').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('humanfriendly.prompts').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('blib2to3.pgen2.driver').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG if debug else logging.WARNING)
-
+logging.getLogger('asyncio').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('zeroconf').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('parso.cache').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('parso.cache.pickle').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('parso.python.diff').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('humanfriendly.prompts').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('blib2to3.pgen2.driver').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(
+    logging.DEBUG if debug else logging.WARNING)
 
 
 def main():
@@ -52,6 +61,10 @@ def main():
     process, address, port = tunnel.tunnel()
     signal.signal(signal.SIGINT, original_sigint_handler)
     logger.info("tunnel started")
+
+    # pymobiledevice3 v4.14.11 RemoteServiceDiscoveryService 只实现了异步上下文管理器
+    rsd = RemoteServiceDiscoveryService((address, port))
+    asyncio.run(rsd.connect())
     try:
         logger.debug(f"tunnel address: {address}, port: {port}")
 
@@ -59,23 +72,20 @@ def main():
         loc = route.get_route()
         logger.info(f"got route from {config.config.routeConfig}")
 
-
-        with RemoteServiceDiscoveryService((address, port)) as rsd:
-            with DvtSecureSocketProxyService(rsd) as dvt:
-                try:
-                    print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
-                    print("会无限循环，按 Ctrl+C 退出")
-                    print("请勿直接关闭窗口，否则无法还原正常定位")
-                    run.run(dvt, loc, config.config.v)
-                except KeyboardInterrupt:
-                    logger.debug("get KeyboardInterrupt (inner)")
-                    logger.debug(f"Is process alive? {process.is_alive()}")
-                finally:
-                    logger.debug(f"Is process alive? {process.is_alive()}")
-                    logger.debug("Start to clear location")
-                    location.clear_location(dvt)
-                    logger.info("Location cleared")
-
+        with DvtSecureSocketProxyService(rsd) as dvt:
+            try:
+                print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
+                print("会无限循环，按 Ctrl+C 退出")
+                print("请勿直接关闭窗口，否则无法还原正常定位")
+                run.run(dvt, loc, config.config.v)
+            except KeyboardInterrupt:
+                logger.debug("get KeyboardInterrupt (inner)")
+                logger.debug(f"Is process alive? {process.is_alive()}")
+            finally:
+                logger.debug(f"Is process alive? {process.is_alive()}")
+                logger.debug("Start to clear location")
+                location.clear_location(dvt)
+                logger.info("Location cleared")
 
     except KeyboardInterrupt:
         logger.debug("get KeyboardInterrupt (outer)")
@@ -86,8 +96,7 @@ def main():
         process.terminate()
         logger.info("tunnel process terminated")
         print("Bye")
-    
 
-    
+
 if __name__ == "__main__":
     main()
