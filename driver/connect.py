@@ -7,10 +7,13 @@ from pymobiledevice3.cli.remote import install_driver_if_required
 from pymobiledevice3.cli.remote import select_device, RemoteServiceDiscoveryService
 from pymobiledevice3.cli.remote import start_tunnel
 from pymobiledevice3.cli.remote import verify_tunnel_imports
+from pymobiledevice3.remote.core_device_tunnel_service import TunnelProtocol
 
 from pymobiledevice3.services.amfi import AmfiService
 
 from pymobiledevice3.exceptions import NoDeviceConnectedError
+
+logger = logging.getLogger(__name__)
 
 def get_usbmux_lockdownclient():
     while True:
@@ -50,6 +53,27 @@ def get_serverrsd():
 
 
 async def tunnel(rsd: RemoteServiceDiscoveryService, queue: multiprocessing.Queue):
-    async with start_tunnel(rsd, None) as tunnel_result:
-        queue.put((tunnel_result.address, tunnel_result.port))
-        await tunnel_result.client.wait_closed()
+    tunnel_errors = []
+    protocols = (TunnelProtocol.QUIC, TunnelProtocol.TCP)
+
+    for protocol in protocols:
+        try:
+            logger.info("starting %s tunnel", protocol.value)
+            async with start_tunnel(rsd, None, protocol=protocol) as tunnel_result:
+                logger.info("tunnel established with %s", protocol.value)
+                queue.put({
+                    "status": "ok",
+                    "address": tunnel_result.address,
+                    "port": tunnel_result.port,
+                    "protocol": protocol.value,
+                })
+                await tunnel_result.client.wait_closed()
+                return
+        except Exception as exc:
+            logger.warning("failed to start %s tunnel: %s", protocol.value, exc)
+            tunnel_errors.append(f"{protocol.value}: {exc!r}")
+
+    raise ConnectionError(
+        "Unable to establish tunnel. "
+        f"Tried protocols: {', '.join(tunnel_errors)}"
+    )
