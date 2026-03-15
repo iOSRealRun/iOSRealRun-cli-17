@@ -49,8 +49,14 @@ def main():
     # start the tunnel in another process
     logger.info("starting tunnel")
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    process, address, port = tunnel.tunnel()
-    signal.signal(signal.SIGINT, original_sigint_handler)
+    try:
+        process, address, port = tunnel.tunnel()
+    except RuntimeError as exc:
+        logger.error("failed to start tunnel: %s", exc)
+        print(f"启动隧道失败：{exc}")
+        return
+    finally:
+        signal.signal(signal.SIGINT, original_sigint_handler)
     logger.info("tunnel started")
     try:
         logger.debug(f"tunnel address: {address}, port: {port}")
