@@ -4,8 +4,8 @@ import os
 
 from driver import connect
 
-def init():
-    # check if root on mac or Administrator on windows
+
+async def init():
     if sys.platform == "win32":
         if not ctypes.windll.shell32.IsUserAnAdmin():
             print("请以管理员权限运行")
@@ -18,19 +18,17 @@ def init():
         print("仅支持macOS和Windows")
         sys.exit(1)
 
-    # get lockdown client
-    lockdown = connect.get_usbmux_lockdownclient()
+    lockdown = await connect.get_usbmux_lockdownclient()
 
-    # check version
     version = connect.get_version(lockdown)
     print(f"Your system version is {version}")
-    if version.split(".")[0] < "17":
-        print(f"仅支持17及以上版本")
+    major = int(version.split(".")[0]) if version else 0
+    if major < 17:
+        print("仅支持iOS 17及以上版本")
         sys.exit(1)
 
-    # check developer mode status
-    developer_mode_status = connect.get_developer_mode_status(lockdown)
+    developer_mode_status = await connect.get_developer_mode_status(lockdown)
     if not developer_mode_status:
-        connect.reveal_developer_mode(lockdown)
+        await connect.reveal_developer_mode(lockdown)
         print("您未开启开发者模式，请打开设备的 设置-隐私与安全性-开发者模式 来开启，开启后需要重启并输入密码，完成后再次运行此程序")
         sys.exit(1)
