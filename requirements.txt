@@ -1,3 +1,5 @@
-pymobiledevice3==2.46.1
+# Recommended on Windows: Python 3.11/3.12. Python 3.13 may require MSVC Build Tools for lzfse.
+pymobiledevice3>=9.20.0,<10
+qh3>=1.9.2,<2
 PyYAML==6.0.1
 geopy==2.4.1

@@ -134,22 +134,34 @@ def fixLockT(loc: list, v, dt):
             t += dt
     return fixedLoc
 
-def run1(dvt, loc: list, v, dt=0.2):
+def run1(location_client, loc: list, v, dt=0.5):
     fixedLoc = fixLockT(loc, v, dt)
     nList = (5, 6, 7, 8, 9)
     n = nList[random.randint(0, len(nList)-1)]
     fixedLoc = randLoc(fixedLoc, n=n)  # a path will be divided into n parts for random route
     clock = time.time()
+    failures = 0
     for i in fixedLoc:
         # utils.setLoc(bd09Towgs84(i))
-        location.set_location(dvt, **bd09Towgs84(i))
-        while time.time()-clock < dt:
-            pass
+        try:
+            location.set_location(location_client, **bd09Towgs84(i))
+            failures = 0
+        except Exception as error:
+            failures += 1
+            print(f"定位下发失败，继续尝试 ({failures}/10): {error}")
+            if failures >= 10:
+                raise
+        remaining = dt - (time.time() - clock)
+        if remaining > 0:
+            time.sleep(remaining)
         clock = time.time()
 
-def run(dvt, loc: list, v, d=15):
+def run(location_client, loc: list, v, d=15):
     random.seed(time.time())
     while True:
         vRand = 1000/(1000/v-(2*random.random()-1)*d)
-        run1(dvt, loc, vRand)
+        run1(location_client, loc, vRand)
+        refresh_session = getattr(location_client, "refresh_session", None)
+        if refresh_session is not None:
+            refresh_session()
         print("跑完一圈了")

@@ -3,11 +3,6 @@ import logging
 import coloredlogs
 import os
 
-from driver import location
-
-from pymobiledevice3.cli.remote import RemoteServiceDiscoveryService
-from pymobiledevice3.cli.developer import DvtSecureSocketProxyService
-
 from init import init
 from init import tunnel
 from init import route
@@ -15,6 +10,10 @@ from init import route
 import run
 
 import config
+from util.pymobiledevice3_compat import (
+    open_location_session,
+    open_remote_service_discovery,
+)
 
 
 debug = os.environ.get("DEBUG", False)
@@ -60,21 +59,25 @@ def main():
         logger.info(f"got route from {config.config.routeConfig}")
 
 
-        with RemoteServiceDiscoveryService((address, port)) as rsd:
-            with DvtSecureSocketProxyService(rsd) as dvt:
+        with open_remote_service_discovery(address, port) as rsd:
+            with open_location_session(rsd) as location_client:
                 try:
                     print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
                     print("会无限循环，按 Ctrl+C 退出")
                     print("请勿直接关闭窗口，否则无法还原正常定位")
-                    run.run(dvt, loc, config.config.v)
+                    run.run(location_client, loc, config.config.v)
                 except KeyboardInterrupt:
                     logger.debug("get KeyboardInterrupt (inner)")
                     logger.debug(f"Is process alive? {process.is_alive()}")
                 finally:
                     logger.debug(f"Is process alive? {process.is_alive()}")
                     logger.debug("Start to clear location")
-                    location.clear_location(dvt)
-                    logger.info("Location cleared")
+                    try:
+                        location_client.clear()
+                    except Exception:
+                        logger.exception("Failed to clear location")
+                    else:
+                        logger.info("Location cleared")
 
 
     except KeyboardInterrupt:
