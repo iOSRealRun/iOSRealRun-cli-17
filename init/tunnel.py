@@ -4,8 +4,7 @@ import multiprocessing
 from driver import connect
 
 def tunnel_proc(queue: multiprocessing.Queue):
-    server_rsd = connect.get_serverrsd()
-    asyncio.run(connect.tunnel(server_rsd, queue))
+    asyncio.run(connect.tunnel(queue))
 
 
 def tunnel():
