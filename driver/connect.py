@@ -1,55 +1,60 @@
-import logging
 import multiprocessing
 
 from pymobiledevice3.lockdown import create_using_usbmux, LockdownClient
 
-from pymobiledevice3.cli.remote import install_driver_if_required
-from pymobiledevice3.cli.remote import select_device, RemoteServiceDiscoveryService
-from pymobiledevice3.cli.remote import start_tunnel
-from pymobiledevice3.cli.remote import verify_tunnel_imports
+from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.module_imports import start_tunnel, verify_tunnel_imports
+from pymobiledevice3.remote.tunnel_service import get_core_device_tunnel_services
 
 from pymobiledevice3.services.amfi import AmfiService
 
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 
-def get_usbmux_lockdownclient():
+async def get_usbmux_lockdownclient():
     while True:
         try:
-            lockdown = create_using_usbmux()
+            lockdown = await create_using_usbmux()
         except NoDeviceConnectedError:
             print("请连接设备后按回车...")
             input()
         else:
             break
     while True:
-        lockdown = create_using_usbmux()
+        lockdown = await create_using_usbmux()
         if lockdown.all_values.get("PasswordProtected"):
             print("请解锁设备后按回车...")
             input()
         else:
             break
-    return create_using_usbmux()
+    return await create_using_usbmux()
 
 def get_version(lockdown: LockdownClient):
     return lockdown.all_values.get("ProductVersion")
 
-def get_developer_mode_status(lockdown: LockdownClient):
-    return lockdown.developer_mode_status
+async def get_developer_mode_status(lockdown: LockdownClient):
+    return await lockdown.get_developer_mode_status()
 
-def reveal_developer_mode(lockdown: LockdownClient):
-    AmfiService(lockdown).create_amfi_show_override_path_file()
+async def reveal_developer_mode(lockdown: LockdownClient):
+    await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
 
-def enable_developer_mode(lockdown: LockdownClient):
-    AmfiService(lockdown).enable_developer_mode()
+async def enable_developer_mode(lockdown: LockdownClient):
+    await AmfiService(lockdown).enable_developer_mode()
 
-def get_serverrsd():
-    install_driver_if_required()
+
+async def tunnel(queue: multiprocessing.Queue):
     if not verify_tunnel_imports():
         exit(1)
-    return select_device(None)
 
+    services = await get_core_device_tunnel_services()
+    if not services:
+        raise NoDeviceConnectedError()
+    service = services[0]
 
-async def tunnel(rsd: RemoteServiceDiscoveryService, queue: multiprocessing.Queue):
-    async with start_tunnel(rsd, None) as tunnel_result:
-        queue.put((tunnel_result.address, tunnel_result.port))
-        await tunnel_result.client.wait_closed()
+    try:
+        # iOS 18.2+ removed QUIC tunnel support, so TCP must be used. On
+        # Python < 3.13 this relies on the sslpsk_pmd3 PSK-TLS fallback.
+        async with start_tunnel(service, protocol=TunnelProtocol.TCP) as tunnel_result:
+            queue.put((tunnel_result.address, tunnel_result.port))
+            await tunnel_result.client.wait_closed()
+    finally:
+        await service.close()
