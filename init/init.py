@@ -1,36 +1,41 @@
-import sys
-import ctypes
-import os
+import logging
+from dataclasses import dataclass
 
 from driver import connect
 
-def init():
-    # check if root on mac or Administrator on windows
-    if sys.platform == "win32":
-        if not ctypes.windll.shell32.IsUserAnAdmin():
-            print("请以管理员权限运行")
-            sys.exit(1)
-    elif sys.platform == "darwin":
-        if os.geteuid() != 0:
-            print("请以root权限运行")
-            sys.exit(1)
-    else:
-        print("仅支持macOS和Windows")
-        sys.exit(1)
+logger = logging.getLogger(__name__)
 
-    # get lockdown client
-    lockdown = connect.get_usbmux_lockdownclient()
 
-    # check version
-    version = connect.get_version(lockdown)
-    print(f"Your system version is {version}")
-    if version.split(".")[0] < "17":
-        print(f"仅支持17及以上版本")
-        sys.exit(1)
+@dataclass(frozen=True)
+class DeviceInfo:
+    udid: str
+    version: str
 
-    # check developer mode status
-    developer_mode_status = connect.get_developer_mode_status(lockdown)
-    if not developer_mode_status:
-        connect.reveal_developer_mode(lockdown)
-        print("您未开启开发者模式，请打开设备的 设置-隐私与安全性-开发者模式 来开启，开启后需要重启并输入密码，完成后再次运行此程序")
-        sys.exit(1)
+
+async def init(serial=None):
+    """Validate the device before opening the iOS 17+ developer tunnel."""
+    logger.info("initializing device connection; tunnel backend will be selected by capability")
+
+    lockdown = await connect.get_usbmux_lockdownclient(serial=serial)
+    try:
+        logger.debug("lockdown values received: %s", sorted(lockdown.all_values.keys()))
+
+        version = connect.get_version(lockdown)
+        print(f"Your system version is {version}")
+        try:
+            major_version = int(version.split(".", 1)[0])
+        except (AttributeError, ValueError) as error:
+            raise RuntimeError(f"could not parse iOS version: {version!r}") from error
+        if major_version < 17:
+            print("仅支持17及以上版本")
+            raise SystemExit(1)
+
+        developer_mode_status = await connect.get_developer_mode_status(lockdown)
+        if not developer_mode_status:
+            await connect.reveal_developer_mode(lockdown)
+            print("您未开启开发者模式，请打开设备的 设置-隐私与安全性-开发者模式 来开启，开启后需要重启并输入密码，完成后再次运行此程序")
+            raise SystemExit(1)
+        return DeviceInfo(udid=lockdown.udid, version=version)
+    finally:
+        logger.debug("closing initialization lockdown connection")
+        await lockdown.close()

@@ -5,12 +5,13 @@ automatically run the route
 
 """修正坐标误差，百度取点使用 BD-09 坐标系，iOS使用 WGS-09 坐标系，进行转换"""
 import math
-import time
 import random
+import time
 
 from geopy.distance import geodesic
 
 from driver import location
+
 
 def bd09Towgs84(position):
     wgs_p = {}
@@ -69,7 +70,6 @@ def smooth(start, end, i):
 def randLoc(loc: list, d=0.000025, n=5):
     import random
     import time
-    import math
     # deepcopy loc
     result = []
     for i in loc:
@@ -134,7 +134,8 @@ def fixLockT(loc: list, v, dt):
             t += dt
     return fixedLoc
 
-def run1(dvt, loc: list, v, dt=0.2):
+async def run1(dvt, loc: list, v, dt=0.2):
+    import asyncio
     fixedLoc = fixLockT(loc, v, dt)
     nList = (5, 6, 7, 8, 9)
     n = nList[random.randint(0, len(nList)-1)]
@@ -142,14 +143,15 @@ def run1(dvt, loc: list, v, dt=0.2):
     clock = time.time()
     for i in fixedLoc:
         # utils.setLoc(bd09Towgs84(i))
-        location.set_location(dvt, **bd09Towgs84(i))
-        while time.time()-clock < dt:
-            pass
+        await location.set_location(dvt, **bd09Towgs84(i))
+        remaining = dt - (time.time() - clock)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
         clock = time.time()
 
-def run(dvt, loc: list, v, d=15):
+async def run(dvt, loc: list, v, d=15):
     random.seed(time.time())
     while True:
         vRand = 1000/(1000/v-(2*random.random()-1)*d)
-        run1(dvt, loc, vRand)
+        await run1(dvt, loc, vRand)
         print("跑完一圈了")
