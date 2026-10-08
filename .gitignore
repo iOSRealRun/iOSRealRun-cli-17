@@ -1,3 +1,7 @@
 .vscode/
 
 __pycache__/
+
+# iOS 14~16 自动下载的 DeveloperDiskImage 缓存
+.ddi/
+
