@@ -1,93 +1,78 @@
-import signal
+import asyncio
 import logging
-import coloredlogs
 import os
 
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+
 from driver import location
-
-from pymobiledevice3.cli.remote import RemoteServiceDiscoveryService
-from pymobiledevice3.cli.developer import DvtSecureSocketProxyService
-
 from init import init
-from init import tunnel
 from init import route
+from init import tunnel
 
 import run
-
 import config
 
 
 debug = os.environ.get("DEBUG", False)
+logging.basicConfig(
+    level=logging.DEBUG if debug else logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+for noisy_logger in (
+    "asyncio",
+    "quic",
+    "zeroconf",
+    "parso.cache",
+    "parso.cache.pickle",
+    "parso.python.diff",
+    "urllib3.connectionpool",
+):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
-# set logging level
-coloredlogs.install(level=logging.INFO)
-logging.getLogger('wintun').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('quic').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('asyncio').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('zeroconf').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.cache').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.cache.pickle').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.python.diff').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('humanfriendly.prompts').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('blib2to3.pgen2.driver').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG if debug else logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
-
-def main():
-    # set level
-    logger = logging.getLogger(__name__)
-    coloredlogs.install(level=logging.INFO)
-    logger.setLevel(logging.INFO)
-    if debug:
-        logger.setLevel(logging.DEBUG)
-        coloredlogs.install(level=logging.DEBUG)
-
-    init.init()
+async def main_async():
+    lockdown = await init.init()
     logger.info("init done")
 
-    # start the tunnel in another process
-    logger.info("starting tunnel")
-    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    process, address, port = tunnel.tunnel()
-    signal.signal(signal.SIGINT, original_sigint_handler)
-    logger.info("tunnel started")
     try:
-        logger.debug(f"tunnel address: {address}, port: {port}")
+        logger.info("starting userspace tunnel")
+        async with tunnel.tunnel(serial=lockdown.udid) as rsd:
+            logger.info(
+                "tunnel connected: %s iOS %s",
+                getattr(rsd, "product_type", "unknown"),
+                getattr(rsd, "product_version", "unknown"),
+            )
 
-        # get route
-        loc = route.get_route()
-        logger.info(f"got route from {config.config.routeConfig}")
+            async with DvtProvider(rsd) as dvt:
+                async with LocationSimulation(dvt) as simulation:
+                    loc = route.get_route()
+                    logger.info("got route from %s", config.config.routeConfig)
 
-
-        with RemoteServiceDiscoveryService((address, port)) as rsd:
-            with DvtSecureSocketProxyService(rsd) as dvt:
-                try:
                     print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
                     print("会无限循环，按 Ctrl+C 退出")
                     print("请勿直接关闭窗口，否则无法还原正常定位")
-                    run.run(dvt, loc, config.config.v)
-                except KeyboardInterrupt:
-                    logger.debug("get KeyboardInterrupt (inner)")
-                    logger.debug(f"Is process alive? {process.is_alive()}")
-                finally:
-                    logger.debug(f"Is process alive? {process.is_alive()}")
-                    logger.debug("Start to clear location")
-                    location.clear_location(dvt)
-                    logger.info("Location cleared")
 
-
-    except KeyboardInterrupt:
-        logger.debug("get KeyboardInterrupt (outer)")
+                    try:
+                        await run.run(simulation, loc, config.config.v)
+                    finally:
+                        logger.info("start to clear location")
+                        await location.clear_location(simulation)
+                        logger.info("Location cleared")
     finally:
-        # stop the tunnel process
-        logger.debug(f"Is process alive? {process.is_alive()}")
-        logger.debug("terminating tunnel process")
-        process.terminate()
-        logger.info("tunnel process terminated")
-        print("Bye")
-    
+        await lockdown.close()
 
-    
+
+def main():
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logger.info("Interrupted")
+    finally:
+        print("Bye")
+
+
 if __name__ == "__main__":
     main()

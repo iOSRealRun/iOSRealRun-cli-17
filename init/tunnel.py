@@ -1,20 +1,10 @@
-import asyncio
-import multiprocessing
+from contextlib import asynccontextmanager
 
-from driver import connect
-
-def tunnel_proc(queue: multiprocessing.Queue):
-    server_rsd = connect.get_serverrsd()
-    asyncio.run(connect.tunnel(server_rsd, queue))
+from pymobiledevice3.remote.userspace_tunnel import UserspaceRsdTunnel
 
 
-def tunnel():
-    # start the tunnel in another process
-    queue = multiprocessing.Queue()
-    process = multiprocessing.Process(target=tunnel_proc, args=(queue,))
-    process.start()
-    
-    # get the address and port of the tunnel
-    address, port = queue.get()
-
-    return process, address, port
+@asynccontextmanager
+async def tunnel(serial=None):
+    """建立 iOS 17+ 的进程内 userspace RSD 隧道。"""
+    async with UserspaceRsdTunnel(serial=serial) as rsd:
+        yield rsd
