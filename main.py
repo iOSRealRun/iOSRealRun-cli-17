@@ -1,6 +1,8 @@
 import asyncio
+from contextlib import suppress
 import logging
 import os
+import threading
 
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
@@ -9,6 +11,7 @@ from driver import location
 from init import init
 from init import route
 from init import tunnel
+from util.console_guard import install_console_close_handler
 
 import run
 import config
@@ -48,19 +51,54 @@ async def main_async():
 
             async with DvtProvider(rsd) as dvt:
                 async with LocationSimulation(dvt) as simulation:
-                    loc = route.get_route()
-                    logger.info("got route from %s", config.config.routeConfig)
+                    loop = asyncio.get_running_loop()
+                    stop_event = asyncio.Event()
+                    cleanup_done = threading.Event()
 
-                    print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
-                    print("会无限循环，按 Ctrl+C 退出")
-                    print("请勿直接关闭窗口，否则无法还原正常定位")
+                    def request_shutdown():
+                        if not loop.is_closed():
+                            loop.call_soon_threadsafe(stop_event.set)
 
+                    uninstall = install_console_close_handler(request_shutdown, cleanup_done)
+                    runner = None
+                    stopper = None
                     try:
-                        await run.run(simulation, loc, config.config.v)
-                    finally:
-                        logger.info("start to clear location")
+                        logger.info("clearing any previous simulated location")
                         await location.clear_location(simulation)
-                        logger.info("Location cleared")
+
+                        loc = route.get_route()
+                        logger.info("got route from %s", config.config.routeConfig)
+
+                        print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
+                        print("会无限循环，按 Ctrl+C 退出")
+                        print("直接关闭窗口时会尝试自动恢复定位；强制结束进程仍建议重启手机")
+
+                        runner = asyncio.create_task(run.run(simulation, loc, config.config.v))
+                        stopper = asyncio.create_task(stop_event.wait())
+                        done, _ = await asyncio.wait({runner, stopper}, return_when=asyncio.FIRST_COMPLETED)
+
+                        if runner in done:
+                            runner.result()
+                        else:
+                            runner.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await runner
+                    finally:
+                        if stopper is not None:
+                            stopper.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await stopper
+                        if runner is not None and not runner.done():
+                            runner.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await runner
+                        try:
+                            logger.info("start to clear location")
+                            await location.clear_location(simulation)
+                            logger.info("Location cleared")
+                        finally:
+                            cleanup_done.set()
+                            uninstall()
     finally:
         await lockdown.close()
 
