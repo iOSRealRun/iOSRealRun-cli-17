@@ -1,15 +1,12 @@
 import ctypes
 import sys
 import threading
-from ctypes import wintypes
 
 CTRL_C_EVENT = 0
 CTRL_BREAK_EVENT = 1
 CTRL_CLOSE_EVENT = 2
 CTRL_LOGOFF_EVENT = 5
 CTRL_SHUTDOWN_EVENT = 6
-
-HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
 
 
 def install_console_close_handler(on_close, cleanup_done: threading.Event, timeout: float = 4.0):
@@ -22,6 +19,9 @@ def install_console_close_handler(on_close, cleanup_done: threading.Event, timeo
     if sys.platform != "win32":
         return lambda: None
 
+    from ctypes import wintypes
+
+    handler_routine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
     def handler(event):
@@ -31,7 +31,7 @@ def install_console_close_handler(on_close, cleanup_done: threading.Event, timeo
             return True
         return False
 
-    callback = HandlerRoutine(handler)
+    callback = handler_routine(handler)
     if not kernel32.SetConsoleCtrlHandler(callback, True):
         raise ctypes.WinError(ctypes.get_last_error())
 

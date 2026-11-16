@@ -1,36 +1,81 @@
 # iOSRealRun-cli-17
 
-## 用法简介
+通过电脑控制 iPhone 或 iPad 模拟位置移动。程序读取按行进顺序排列的闭合路线，
+将 BD-09 坐标转换为 WGS-84，并按设定的平均速度持续下发位置。
 
-### 前置条件
+## 环境要求
 
-1. 系统是 `Windows` 或 `MacOS`
-2. iPhone 或 iPad 系统版本大于等于 17
-3. Windows 需要安装 iTunes
-4. 已安装 `Python3` 和 `pip3`
-5. **重要**: 只能有一台 iPhone 或 iPad 连接到电脑，否则会出问题
+- Windows 或 macOS
+- Python 3.9 或更高版本
+- iOS 或 iPadOS 17 及以上
+- Windows 建议安装 iTunes，以提供 Apple Mobile Device 驱动
+- 设备已连接、解锁并信任电脑，且已开启开发者模式
+- 同一时间只连接一台 iPhone 或 iPad
 
-### 步骤
+当前实现使用进程内 userspace RSD 隧道，通常不再需要 Windows 管理员权限或
+macOS root 权限。
 
-1. 克隆本项目到本地并进入项目目录
-2. 安装依赖（建议使用虚拟环境）  
-    ```shell
-    pip3 install -r requirements.txt
-    ```
-    如果 `pip3` 无法安装，请使用 `pip` 替代  
-    如果提示没有需要的版本，请尝试不适用国内源  
-3. 修改配置和路线文件 （见 [这里](https://github.com/iOSRealRun/iOSRealRun-cli/blob/main/README.md#%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95) 的 4、5、7 步）
-4. 将设备连接到电脑，解锁，如果请求信任的提示框，请点击信任
-5. Windows **以管理员身份** 打开终端（cmd 或 PowerShell），先进入项目目录，然后执行以下命令  
-    ```shell
-    python main.py
-    ```
-    MacOS 打开终端，先进入项目目录，然后执行以下命令  
-    ```shell
-    sudo python3 main.py
-    ```
-    > 需要 管理员 或 root 权限是因为需要创建 tun 设备  
+## 安装
 
-6. 按照提示操作，如果一直说没有设备连接，Windows请确保 iTunes 已安装（可能需要打开），重新运行程序，在第3步时请确保设备已连接，解锁并信任
-7. 结束请务必使用 `Ctrl + C` 终止程序，否则无法恢复定位
-8. 如果定位未恢复，可以重启手机解决
+在项目目录创建虚拟环境并安装依赖：
+
+### Windows
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+之后可直接双击 `run.bat` 启动。也可以在终端运行：
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+### macOS
+
+```shell
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python main.py
+```
+
+## 配置
+
+编辑 `config.yaml`：
+
+```yaml
+v: 3.3
+speedVariation: 0.05
+routeConfig: "HNroute.txt"
+libimobiledeviceDir: "libimobiledevice"
+imageDir: "DeveloperDiskImage"
+```
+
+- `v`：每圈平均速度，单位米/秒。
+- `speedVariation`：实时速度相对平均值的小幅波动比例。`0.05` 表示约 ±5%，
+  设置为 `0` 可关闭波动。
+- `routeConfig`：路线文件路径。
+
+## 路线文件
+
+路线使用百度 BD-09 坐标，由多个 JSON 对象以英文逗号连接，最外层不要加 `[]`：
+
+```text
+{"lng":"120.7335575","lat":"30.5280238"},{"lng":"120.7335665","lat":"30.5279500"}
+```
+
+坐标应按行进顺序排列，只绘制一圈；程序会自动从最后一个点返回起点并持续循环。
+
+## 退出
+
+优先按 `Ctrl+C`。正常退出时应看到：
+
+```text
+Location cleared
+Bye
+```
+
+直接关闭控制台时程序会尝试自动清除模拟定位。如果使用任务管理器强制结束、
+`taskkill /F`、断电或系统崩溃，进程内清理可能来不及执行；下次启动会先尝试
+清除遗留定位，必要时请重启设备。
