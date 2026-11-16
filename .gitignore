@@ -1,3 +1,41 @@
-.vscode/
+# Personal route data (coordinates can reveal location)
+/myroute.txt
+/route.txt
+/routes/
+*.route.txt
+*.gpx
+*.kml
+*.geojson
 
+# Local configuration and secrets
+/config.local.*
+/config.*.local.*
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+
+# Runtime logs and Python caches
+*.log
+/logs/
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.venv/
+.uv-python/
+
+# Editor, OS metadata, and local agent instructions
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+AGENTS.md
+CLAUDE.md
