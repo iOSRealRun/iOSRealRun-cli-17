@@ -69,11 +69,24 @@ async def main_async():
                         loc = route.get_route()
                         logger.info("got route from %s", config.config.routeConfig)
 
-                        print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
+                        speed_variation = float(
+                            getattr(config.config, "speedVariation", 0.05)
+                        )
+                        if not 0 <= speed_variation < 1:
+                            raise ValueError(
+                                "speedVariation must be between 0 (inclusive) and 1"
+                            )
+                        variation_percent = speed_variation * 100
+                        print(
+                            f"已开始模拟跑步，平均速度为 {config.config.v} m/s，"
+                            f"实时速度波动约 ±{variation_percent:g}%"
+                        )
                         print("会无限循环，按 Ctrl+C 退出")
                         print("直接关闭窗口时会尝试自动恢复定位；强制结束进程仍建议重启手机")
 
-                        runner = asyncio.create_task(run.run(simulation, loc, config.config.v))
+                        runner = asyncio.create_task(
+                            run.run(simulation, loc, config.config.v, speed_variation)
+                        )
                         stopper = asyncio.create_task(stop_event.wait())
                         done, _ = await asyncio.wait({runner, stopper}, return_when=asyncio.FIRST_COMPLETED)
 

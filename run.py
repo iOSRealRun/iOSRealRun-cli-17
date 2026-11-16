@@ -5,6 +5,7 @@ automatically run the route
 
 """修正坐标误差，百度取点使用 BD-09 坐标系，iOS使用 WGS-09 坐标系，进行转换"""
 import asyncio
+import bisect
 import math
 import time
 import random
@@ -67,10 +68,8 @@ def smooth(start, end, i):
     i = (i-start)/(end-start)*math.pi
     return math.sin(i)**2
 
-def randLoc(loc: list, d=0.000025, n=5):
-    import random
-    import time
-    import math
+def randLoc(loc: list, d=0.000025, n=5, rng=None):
+    rng = rng or random
     # deepcopy loc
     result = []
     for i in loc:
@@ -82,11 +81,10 @@ def randLoc(loc: list, d=0.000025, n=5):
         center["lng"] += i["lng"]
     center["lat"] /= len(result)
     center["lng"] /= len(result)
-    random.seed(time.time())
     for i in range(n):
         start = int(i*len(result)/n)
         end = int((i+1)*len(result)/n)
-        offset = (2*random.random()-1) * d
+        offset = (2*rng.random()-1) * d
         for j in range(start, end):
             distance = math.sqrt(
                 (result[j]["lat"]-center["lat"])**2 + (result[j]["lng"]-center["lng"])**2
@@ -97,7 +95,7 @@ def randLoc(loc: list, d=0.000025, n=5):
             result[j]["lng"] +=  (result[j]["lng"]-center["lng"])/distance*offset*smooth(start, end, j)
     start = int(i*len(result)/n)
     end = len(result)
-    offset = (2*random.random()-1) * d
+    offset = (2*rng.random()-1) * d
     for j in range(start, end):
         distance = math.sqrt(
             (result[j]["lat"]-center["lat"])**2 + (result[j]["lng"]-center["lng"])**2
@@ -108,49 +106,123 @@ def randLoc(loc: list, d=0.000025, n=5):
         result[j]["lng"] +=  (result[j]["lng"]-center["lng"])/distance*offset*smooth(start, end, j)
     return result
 
-def fixLockT(loc: list, v, dt):
-    fixedLoc = []
-    t = 0
-    T = []
-    T.append(geodistance(loc[1],loc[0])/v)
-    a = loc[0].copy()
-    b = loc[1].copy()
-    j = 0
-    while t < T[0]:
-        xa = a["lat"] + j*(b["lat"]-a["lat"])/(max(1, int(T[0]/dt)))
-        xb = a["lng"] + j*(b["lng"]-a["lng"])/(max(1, int(T[0]/dt)))
-        fixedLoc.append({"lat": xa, "lng": xb})
-        j += 1
-        t += dt
-    for i in range(1, len(loc)):
-        T.append(geodistance(loc[(i+1)%len(loc)],loc[i])/v + T[-1])
-        a = loc[i].copy()
-        b = loc[(i+1)%len(loc)].copy()
-        j = 0
-        while t < T[i]:
-            xa = a["lat"] + j*(b["lat"]-a["lat"])/(max(1, int((T[i]-T[i-1])/dt)))
-            xb = a["lng"] + j*(b["lng"]-a["lng"])/(max(1, int((T[i]-T[i-1])/dt)))
-            fixedLoc.append({"lat": xa, "lng": xb})
-            j += 1
-            t += dt
-    return fixedLoc
+def build_route_segments(loc):
+    """Return non-zero route segments and the closed route's total length."""
+    segments = []
+    route_distance = 0.0
+    for start, end in zip(loc, loc[1:] + loc[:1]):
+        segment_distance = geodistance(start, end)
+        if segment_distance == 0:
+            continue
+        segment_end = route_distance + segment_distance
+        segments.append((start, end, route_distance, segment_end))
+        route_distance = segment_end
+    if not segments or route_distance == 0:
+        raise ValueError("route must contain at least two different points")
+    return segments, route_distance
 
-async def run1(simulation, loc: list, v, dt=0.2):
-    fixedLoc = fixLockT(loc, v, dt)
+def point_at_distance(segments, segment_ends, route_distance, distance):
+    distance = min(max(distance, 0.0), route_distance)
+    index = min(bisect.bisect_right(segment_ends, distance), len(segments) - 1)
+    start, end, segment_start, segment_end = segments[index]
+    ratio = (distance - segment_start) / (segment_end - segment_start)
+    return {
+        "lat": start["lat"] + ratio * (end["lat"] - start["lat"]),
+        "lng": start["lng"] + ratio * (end["lng"] - start["lng"]),
+    }
+
+def speed_multipliers(step_count, lap_duration, speed_variation, rng):
+    """Build a smooth speed curve whose arithmetic mean is exactly one."""
+    if speed_variation <= 0:
+        return [1.0] * step_count
+
+    # Integer cycle counts keep the speed continuous when the route wraps.
+    cycles1 = max(1, round(lap_duration / rng.uniform(18, 45)))
+    cycles2 = max(2, round(lap_duration / rng.uniform(12, 30)))
+    phase1 = rng.uniform(0, 2 * math.pi)
+    phase2 = rng.uniform(0, 2 * math.pi)
+    wave = [
+        math.sin(2 * math.pi * cycles1 * (i + 0.5) / step_count + phase1)
+        + 0.55 * math.sin(2 * math.pi * cycles2 * (i + 0.5) / step_count + phase2)
+        for i in range(step_count)
+    ]
+    mean = sum(wave) / step_count
+    wave = [value - mean for value in wave]
+    peak = max(abs(value) for value in wave)
+    if peak == 0:
+        return [1.0] * step_count
+    return [1.0 + speed_variation * value / peak for value in wave]
+
+def build_lap_schedule(loc, v, dt, speed_variation, rng):
+    """Return paced points and the duration of one constant-time interval."""
+    if v <= 0:
+        raise ValueError("average speed must be greater than zero")
+    if dt <= 0:
+        raise ValueError("location interval must be greater than zero")
+    if not 0 <= speed_variation < 1:
+        raise ValueError("speed variation must be between 0 (inclusive) and 1")
+
+    segments, route_distance = build_route_segments(loc)
+    segment_ends = [segment[3] for segment in segments]
+    nominal_duration = route_distance / v
+    step_count = max(2, math.ceil(nominal_duration / dt))
+    multipliers = speed_multipliers(
+        step_count, nominal_duration, speed_variation, rng
+    )
+
+    def schedule_points(multipliers):
+        total = sum(multipliers)
+        points = []
+        travelled = 0.0
+        for multiplier in multipliers:
+            distance = route_distance * travelled / total
+            points.append(
+                point_at_distance(segments, segment_ends, route_distance, distance)
+            )
+            travelled += multiplier
+        return points
+
+    points = schedule_points(multipliers)
+
+    # Interpolating in latitude/longitude makes the sum of sampled geodesic
+    # distances differ slightly from the waypoint total. Calibrate the lap
+    # duration against the actual sampled path so its average speed stays v.
+    sampled_distance = sum(
+        geodistance(points[i], points[(i + 1) % step_count])
+        for i in range(step_count)
+    )
+    calibrated_steps = max(2, math.ceil((sampled_distance / v) / dt))
+    if calibrated_steps != step_count:
+        step_count = calibrated_steps
+        multipliers = speed_multipliers(
+            step_count, sampled_distance / v, speed_variation, rng
+        )
+        points = schedule_points(multipliers)
+        sampled_distance = sum(
+            geodistance(points[i], points[(i + 1) % step_count])
+            for i in range(step_count)
+        )
+
+    interval = sampled_distance / (v * step_count)
+    return points, interval
+
+async def run1(simulation, loc: list, v, dt=0.2, speed_variation=0.0, rng=None):
+    rng = rng or random
     nList = (5, 6, 7, 8, 9)
-    n = nList[random.randint(0, len(nList)-1)]
-    fixedLoc = randLoc(fixedLoc, n=n)  # a path will be divided into n parts for random route
-    for point in fixedLoc:
-        started = time.monotonic()
+    n = nList[rng.randint(0, len(nList)-1)]
+    route_points = randLoc(loc, n=n, rng=rng)
+    points, interval = build_lap_schedule(route_points, v, dt, speed_variation, rng)
+    lap_started = time.monotonic()
+    for index, point in enumerate(points):
         await location.set_location(simulation, **bd09Towgs84(point))
-        remaining = dt - (time.monotonic() - started)
+        deadline = lap_started + (index + 1) * interval
+        remaining = deadline - time.monotonic()
         if remaining > 0:
             await asyncio.sleep(remaining)
 
 
-async def run(simulation, loc: list, v, d=15):
-    random.seed(time.time())
+async def run(simulation, loc: list, v, speed_variation=0.05):
+    rng = random.Random(time.time_ns())
     while True:
-        vRand = 1000/(1000/v-(2*random.random()-1)*d)
-        await run1(simulation, loc, vRand)
+        await run1(simulation, loc, v, speed_variation=speed_variation, rng=rng)
         print("跑完一圈了")

@@ -1,4 +1,5 @@
 v: 3.3
+speedVariation: 0.05
 routeConfig: "HNroute.txt"
 libimobiledeviceDir: "libimobiledevice"
 imageDir: "DeveloperDiskImage"
